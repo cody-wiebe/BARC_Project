@@ -13,6 +13,7 @@
 # (for clarifiactions and suggestions please write to charlottvallon@berkeley.edu).
 #
 # ----------------------------------------------------------------------------------------------------------------------
+import threading
 import time
 
 import numpy as np
@@ -28,7 +29,7 @@ from hplControl import hplControl
 #%% Initialization 
 
 # define the test environment from loaded pickle file, and load previously determined raceline
-testfile = 'Tracks/US.pkl'
+testfile = 'Tracks/AE.pkl'
 [raceline_X,raceline_Y, Cur, map, race_time, pframe] = plotFromFile(testfile, lineflag=True)
 
 # MPC parameters
@@ -42,10 +43,10 @@ model = 'BARC' # vehicle model, BARC or Genesis
 # hpl parameters
 s_conf_thresh = 8 # confidence threshold for del_s prediction
 ey_conf_thresh = 1.3 # confidence threshold for ey prediction
-
+thread1 = None
 # safety-mpc parameters
-gamma = 0.05 # cost function weight (tracking vt vs. centerline)
-vt = 5 # speed for lane-keeping safety controller
+gamma = 0.5 # cost function weight (tracking vt vs. centerline)
+vt = 2 # speed for lane-keeping safety controller
 
 # flag for retraining
 retrain_flag = False
@@ -79,6 +80,13 @@ x_pred_stored = np.empty((1,21))
 u_pred = np.array([[0,0],[0,0]])
 
 # while the predicted s-state of the vehicle is less than track_length:
+
+def stop_plot():
+    time.sleep(0.6)
+    plt.close()
+
+
+print(f'MAP Tracklenght: {map.TrackLength}')
 while x_pred[4, -1] <= map.TrackLength:
     
     # evaluate GPs
@@ -127,10 +135,12 @@ while x_pred[4, -1] <= map.TrackLength:
        
     plot_closed_loop(map,x_closedloop,x_pred = x_pred[:,:HPLMPC.N+1], offst=20)
 
+    thread1 = threading.Thread(target=stop_plot)
+    thread1.start()
 
     plt.show()
-
-    plt.close()
+    thread1.join()
+    # plt.close()
 
 x_closedloop = np.hstack((x_closedloop, x_pred))
 hpl_time = np.shape(x_closedloop)[1]*dt
