@@ -13,6 +13,7 @@
 # (for clarifiactions and suggestions please write to charlottvallon@berkeley.edu).
 #
 # ----------------------------------------------------------------------------------------------------------------------
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,6 +21,7 @@ from hpl_functions import plot_closed_loop, plotFromFile, vx_interp, ey_interp, 
 from Track_new import *
 from matplotlib.patches import Polygon
 from hplStrategy import hplStrategy
+from hplStrategy import ExactGPModel
 from hplControl import hplControl
 
 
@@ -42,7 +44,7 @@ s_conf_thresh = 8 # confidence threshold for del_s prediction
 ey_conf_thresh = 1.3 # confidence threshold for ey prediction
 
 # safety-mpc parameters
-gamma = 0.1 # cost function weight (tracking vt vs. centerline)
+gamma = 0.05 # cost function weight (tracking vt vs. centerline)
 vt = 5 # speed for lane-keeping safety controller
 
 # flag for retraining
@@ -77,7 +79,7 @@ x_pred_stored = np.empty((1,21))
 u_pred = np.array([[0,0],[0,0]])
 
 # while the predicted s-state of the vehicle is less than track_length:
-while x_pred[4, -1] < map.TrackLength:
+while x_pred[4, -1] <= map.TrackLength:
     
     # evaluate GPs
     est_s, std_s, est_ey, std_ey, strategy_set, centers = AeBeUsStrat.evaluateStrategy(x_state)
@@ -103,12 +105,17 @@ while x_pred[4, -1] < map.TrackLength:
         x_state[5] -= eps*sign(x_state[5])
     
     # save important quantities for next round (predicted inputs, predicted state)
-    x_closedloop = np.hstack((x_closedloop, np.reshape(x_state,(6,1))))
-    
+    try:
+        x_closedloop = np.hstack((x_closedloop, np.reshape(x_state,(6,1))))
+    except Exception as e:
+        pass
+
     # plot the closedloop thus far 
     fig, ax = plt.subplots(1)
     ax.add_patch(strategy_set)
-    
+    print(x_pred[0])
+    print(x_pred[1])
+
     if plotting_flag:
         for st in HPLMPC.set_list:
             if st != []:
@@ -119,7 +126,11 @@ while x_pred[4, -1] < map.TrackLength:
                 ax.add_patch(Polygon(rect_pts_xy, True, color = 'g',alpha = 0.3))
        
     plot_closed_loop(map,x_closedloop,x_pred = x_pred[:,:HPLMPC.N+1], offst=20)
+
+
     plt.show()
+
+    plt.close()
 
 x_closedloop = np.hstack((x_closedloop, x_pred))
 hpl_time = np.shape(x_closedloop)[1]*dt

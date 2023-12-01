@@ -109,11 +109,22 @@ class Map2():
         
     def getGlobalPosition(self, s, ey, epsi, return_tangent = False):
         # local_to_global(self,coords, return_tangent = False):
+        if type(self.cs(s,1)[0]) == np.ndarray:
+            ds = self.cs(s,1)[0]
+        else:
+            ds = self.cs(s,1)
         
-        xy = self.cs(s)
+        if type(self.cs(s)[0]) == np.ndarray:
+            xy = self.cs(s)[0]
+        else:
+            xy = self.cs(s)
         
-        ds = self.cs(s,1) # derivative/tangent at that point
+        # ds = self.cs(s,1) # derivative/tangent at that point
+        # print(type(ds[0]))
         n = ds / np.linalg.norm(ds) # normalize
+        # print(n[1])
+        # print(ds)
+        # print(xy)
         n_t = np.array([n[1], -n[0]]) # invert to get normal
         
         xy = xy - ey * n_t # chnaged from Thomas' original code of adding (xy + ey*n_t)

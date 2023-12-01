@@ -15,6 +15,7 @@ def plotFromFile(testfile, lineflag = False, spacing = 0):
     db = pickle.load(open(testfile,"rb"))
     pframe= db['raceline']
     map = db['trackmap']
+    print(pframe)
         
     # play back recorded inputs
     X=[0]
@@ -99,7 +100,7 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
                 [x,y] = map.getGlobalPosition(x_cl[4,i], x_cl[5,i],0)
                 X = np.append(X,x)
                 Y = np.append(Y,y)
-    except 'Value Error': 
+    except: 
         if bool(x_cl.any()):
             for i in range(0, np.shape(x_cl)[1]):
                 [x,y] = map.getGlobalPosition(x_cl[4,i], x_cl[5,i],0)

@@ -217,7 +217,7 @@ class hplControl():
     
         # centers contains [s_pred, s_std, ey_pred, ey_std]
         s_pred, s_std, ey_pred, ey_std = self.set_list[N-1]
-            
+        # print(s_pred)
         TrackHalfW = self.map.width
         TrackLength = self.map.TrackLength
         
@@ -328,10 +328,10 @@ class hplControl():
         
         # terminal constraint - strategy
         def _termSet(m):
-            yield m.x4[N] <= s_pred + s_std
-            yield m.x4[N] >= s_pred - s_std
-            yield m.x5[N] <= ey_pred + ey_std
-            yield m.x5[N] >= ey_pred - ey_std
+            yield m.x4[N] <= s_pred[0] + s_std[0]
+            yield m.x4[N] >= s_pred[0] - s_std[0]
+            yield m.x5[N] <= ey_pred[0] + ey_std[0]
+            yield m.x5[N] >= ey_pred[0] - ey_std[0]
         m.term_constraint = ConstraintList(rule=_termSet)
         
         def _safetySet(m):
@@ -339,7 +339,7 @@ class hplControl():
             a = -w
             yield (a[0] * scaler.scale_[0] * (m.x0[N] - scaler.mean_[0])/scaler.var_[0]) + (a[1] * scaler.scale_[1] * (m.x1[N] - scaler.mean_[1])/scaler.var_[1]) + (a[2] * scaler.scale_[2] * (m.x2[N] - scaler.mean_[2])/scaler.var_[2]) + (a[3] * scaler.scale_[3] * (m.x3[N] - scaler.mean_[3])/scaler.var_[3]) + (a[4] * scaler.scale_[4] * (m.x5[N] - scaler.mean_[4])/scaler.var_[4]) - clf.intercept_[0] <= 0
         
-        if beta:
+        if self.beta:
             m.safety_constraint = ConstraintList(rule=_safetySet)
                
         # Objective function - should minimize deviation from state to center of corresponding strategy set
@@ -417,23 +417,23 @@ class hplControl():
                         if solver_status == False:
                             print('giving up.')
                                         
-                x_pred = np.hstack((x_pred, np.zeros((6, self.N_mpc + 1 - np.shape(x_pred)[1]))))
+                x_pred = np.hstack((x_pred, np.zeros((6, self.N + 1 - np.shape(x_pred)[1]))))
                     
             else: 
                 # we're just going to solve the "previous" MPC problem, which under no model uncertainty amounts to re-using the same inputs.
                 print('Low confidence -- shortening horizon')           
-                x_pred, u_pred, solver_status = strategy_MPC(x_state, self.N)
+                x_pred, u_pred, solver_status = self.strategy_MPC(x_state, self.N)
                 
                 if solver_status == False:
                     x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, self.N_mpc)
                     if solver_status == False:
                         x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, int(self.N_mpc/4))
                         if solver_status == False:
-                            x_pred, u_pred, solver_status = lane_track_MPC(x_state, 1)
+                            x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, 1)
                             if solver_status == False:
                                 input('shortened horizon MPC was infeasible?')
                 
-                x_pred = np.hstack((x_pred, np.zeros((6, N_mpc + 1 - np.shape(x_pred)[1]))))              
+                x_pred = np.hstack((x_pred, np.zeros((6, self.N + 1 - np.shape(x_pred)[1]))))              
           
         else:
             
@@ -466,12 +466,13 @@ class hplControl():
                             x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, 1)                    
                             if solver_status == False:
                                 print('giving up.')
-                    x_pred = np.hstack((x_pred, np.zeros((6, self.N_mpc + 1 - np.shape(x_pred)[1]))))
+                    x_pred = np.hstack((x_pred, np.zeros((6, self.N + 1 - np.shape(x_pred)[1]))))
                 
                 else:
                     print('Infeasible strategy -- shortening horizon')
-                    
-                    x_pred, u_pred, solver_status = self.strategy_MPC(x_state, self.N)               
+                    print(x_pred)
+                    print(u_pred)
+                    x_pred, u_pred, solver_status = self.strategy_MPC(x_state, self.N)
                     
                     if solver_status == False:
                         x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, self.N_mpc)
@@ -482,12 +483,16 @@ class hplControl():
                             if solver_status == False:
                                 x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, 1)                    
                                 if solver_status == False:
-                                    input('shortened horizon MPC was infeasible?')   
-                                               
-                    x_pred = np.hstack((x_pred, np.zeros((6, self.N_mpc + 1 - np.shape(x_pred)[1]))))
+                                    input('shortened horizon MPC was infeasible?')
+
+                    print(x_pred)
+                    print(u_pred)
+                    x_pred = np.hstack((x_pred, np.zeros((6, self.N + 1 - np.shape(x_pred)[1]))))
                 
             else:          
                 print('New feasible strategy found!')                
                 self.N = self.N_mpc
+
+
 
             return x_pred, u_pred

@@ -82,13 +82,16 @@ class hplStrategy():
         
         for file in train_list:
             db = pickle.load(open(file,"rb"))
+            # print(db)
             pframe= db['raceline']
             [TD, TL]=self.createTrainingData_theta(pframe)
             TrainD = np.vstack([TrainD,TD]) if np.size(TrainD) else TD
             TrainL = np.vstack([TrainL,TL]) if np.size(TrainL) else TL
-            
-            return TrainD, TrainL
-        
+            # print(TrainD)
+            # print(TD)
+            print(TrainD.shape)
+        return TrainD, TrainL
+        # print(TrainD)
     def createTrainingData_theta(self, pframe):
         # this function creates training data matrices with inputs (X) and outputs (Y).
         
@@ -101,8 +104,8 @@ class hplStrategy():
         # input vector: [vx[0], ey[0], d_theta[1], ..., d_theta[T]]
         # output: [s[N]-s[0], ey[N]]
         
-        TrainD = [] # training input
-        TrainL = [] # training labels [s_pred, ey_pred]
+        TrainD = np.array([]) # training input
+        TrainL = np.array([]) # training labels [s_pred, ey_pred]
             
         cur_s = 0
         while True:
@@ -121,9 +124,9 @@ class hplStrategy():
             t_input.append(cur_ey)
             
             # the first angle is the angle from the current state to the next. deviation calculated from tangent.
-            b = map.cs(cur_s,1)
-            tmp_s = map.getGlobalPosition(cur_s,0,0)
-            tmp_next_s = map.getGlobalPosition(s_indices[0],0,0) 
+            b = self.map.cs(cur_s,1)
+            tmp_s = self.map.getGlobalPosition(cur_s,0,0)
+            tmp_next_s = self.map.getGlobalPosition(s_indices[0],0,0) 
             f = [tmp_next_s[0]-tmp_s[0], tmp_next_s[1] - tmp_s[1]]
             
             angle_sign = np.sign(np.cross(b,f))
@@ -134,14 +137,14 @@ class hplStrategy():
             t_input.append(theta)
             
             for s in s_indices:            
-                tmp_s = map.getGlobalPosition(s,0,0)
+                tmp_s = self.map.getGlobalPosition(s,0,0)
                 
                 # vector pointing from prev_s to s?           
-                tmp_prev_s = map.getGlobalPosition(s - self.ds,0,0)
+                tmp_prev_s = self.map.getGlobalPosition(s - self.ds,0,0)
                 b = [tmp_s[0]-tmp_prev_s[0], tmp_s[1] - tmp_prev_s[1]] 
                 
                 # vector pointing from s to next_s? 
-                tmp_next_s = map.getGlobalPosition(s + self.ds,0,0)
+                tmp_next_s = self.map.getGlobalPosition(s + self.ds,0,0)
                 f = [tmp_next_s[0]-tmp_s[0], tmp_next_s[1] - tmp_s[1]]             
                
                 # sign of the angle?
@@ -152,19 +155,23 @@ class hplStrategy():
                 theta = angle_sign * angle_size
     
                 t_input.append(theta)      
-                           
+            # print(t_input)           
             # concatenate training data and add to list    
-            TrainD.append(t_input)
-            
+            # TrainD.append(t_input)
+            TrainD = np.append(TrainD, t_input)
+            # TrainD = np.append(TrainD, t_input)
+            # print(TrainD)
             # training labels: d_s, ey
             cur_t = t_interp(pframe, cur_s)
-            pred_t = cur_t + self.N*self.dt 
+            pred_t = cur_t + self.N_mpc*self.dt 
             pred_s = get_s_from_t(pframe,pred_t)
                     
             # check if the s that interpolates to the end state is still in range
             if pred_s>=pframe.index[-1]:
                 break
-            TrainL.append([pred_s-cur_s, ey_interp(pframe, pred_s)]) 
+            # TrainL.append([pred_s-cur_s, ey_interp(pframe, pred_s)])
+            TrainL = np.append(TrainL, [pred_s-cur_s, ey_interp(pframe, pred_s)])
+            # TrainL = np.append(TrainL, [pred_s-cur_s, ey_interp(pframe, pred_s)]) 
             
             cur_s += self.fint        
             
@@ -173,8 +180,13 @@ class hplStrategy():
     def train_s_GP(self, TrainD, TrainL):
     
         # training data GP_s
-        s_train_data = TrainD[:,[0,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]]
-        s_train_label = TrainL[:, 0]
+        print(TrainD.shape)
+        s_train_data = TrainD[0]
+        s_train_data = np.append(s_train_data, TrainD[2:17])
+        # s_train_data = TrainD[:,[0,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]]
+        s_train_label = TrainL[0]
+        print(s_train_data.shape)
+
         s_train_data_shuff, s_train_label_shuff = shuffle(s_train_data, s_train_label)
         s_train_data = torch.from_numpy(s_train_data_shuff).double()
         s_train_label = torch.from_numpy(s_train_label_shuff).double()
