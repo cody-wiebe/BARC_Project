@@ -214,7 +214,7 @@ class hplControl():
         clf = self.clf
         
         cv_pred = self.curv_pred_LMPC(x, N) 
-    
+
         # centers contains [s_pred, s_std, ey_pred, ey_std]
         s_pred, s_std, ey_pred, ey_std = self.set_list[N-1]
         # print(s_pred)
@@ -395,6 +395,11 @@ class hplControl():
     
     def solve(self, x_state, std_s, std_ey, centers):
         # depending on confidence measure, append the SetList
+
+        # x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, self.N_mpc)
+        x_pred, u_pred, solver_status = self.strategy_MPC(x_state, self.N_mpc)
+        return x_pred, u_pred
+
         if std_s > self.s_conf_thresh or std_ey > self.ey_conf_thresh:
             # add the empty set to set_list, but we won't use it in this iteration
             self.set_list.append([])
@@ -485,8 +490,8 @@ class hplControl():
                                 if solver_status == False:
                                     input('shortened horizon MPC was infeasible?')
 
-                    print(x_pred)
-                    print(u_pred)
+                    print(f'XPRED: {x_pred}')
+                    print(f'UPRED: {u_pred}')
                     x_pred = np.hstack((x_pred, np.zeros((6, self.N + 1 - np.shape(x_pred)[1]))))
                 
             else:          

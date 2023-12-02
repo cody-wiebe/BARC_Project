@@ -47,7 +47,7 @@ class hplStrategy():
             self.ey_likelihood = pickle.load(open('AE:BE:US/ey_likelihood.pkl','rb'))
             self.ey_likelihood.eval()
         
-    def trainStrategy(self):
+    def  trainStrategy(self):
         train_list = ['Tracks/CN.pkl', 'Tracks/AT.pkl', 'Tracks/MX.pkl', 'Tracks/HU.pkl', 'Tracks/CA.pkl', 'Tracks/IT.pkl','Tracks/JP.pkl']
         test_list = ['Tracks/US.pkl', 'Tracks/BE.pkl', 'Tracks/AE.pkl']
         
