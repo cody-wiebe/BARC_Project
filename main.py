@@ -96,8 +96,8 @@ def stop_plot():
 
 
 print(f'MAP Tracklength: {map.TrackLength}')
-# while x_pred[4, -1] < map.TrackLength:
-while counter <= 250:
+while x_pred[4, -1] < map.TrackLength:
+# while counter <= 250:
     counter +=1
     # evaluate GPs
     est_s, std_s, est_ey, std_ey, strategy_set, centers = AeBeUsStrat.evaluateStrategy(x_state)
@@ -136,7 +136,7 @@ while counter <= 250:
     # plot the closedloop thus far 
     # fig, ax = plt.subplots(1)
     # ax.add_patch(strategy_set)
-    print(counter)
+    # print(counter)
     #print(x_pred[2])
     # print(x_pred[0])
     # print(x_pred[1])
@@ -151,10 +151,10 @@ while counter <= 250:
                 rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] - st[1], st[2] + st[3], 0), (1,-1))))
                 ax.add_patch(Polygon(rect_pts_xy, True, color = 'g',alpha = 0.3))
        
-    if counter > 60:
-        print(x_pred[4,-1])
-        plot_closed_loop(map, x_closedloop, x_pred=x_pred[:, :HPLMPC.N + 1], offst=20)
-        plt.show()
+    # if counter > 60:
+    #     print(x_pred[4,-1])
+    #     plot_closed_loop(map, x_closedloop, x_pred=x_pred[:, :HPLMPC.N + 1], offst=20)
+    #     plt.show()
     #thread1 = threading.Thread(target=stop_plot)
     #thread1.start()
 
@@ -166,10 +166,10 @@ x_pred_stored = x_pred_stored[1:,:]
 print(np.shape(x_closedloop))
 
 
-for i in range(len(x_pred_stored[:, 0])):
-    if i % 6 == 0:
-        print('Vx at step ' + str(i/6) + ': ' + str(x_pred_stored[i,0]))
-        print('Vy at step: ' + str(i / 6) + ': ' + str(x_pred_stored[i + 1, 0]))
+# for i in range(len(x_pred_stored[:, 0])):
+#     if i % 6 == 0:
+#         print('Vx at step ' + str(i/6) + ': ' + str(x_pred_stored[i,0]))
+#         print('Vy at step: ' + str(i / 6) + ': ' + str(x_pred_stored[i + 1, 0]))
 
 
 #%% Plotting closed-loop behavior

@@ -334,7 +334,17 @@ class hplControl():
             yield m.x5[N] <= ey_pred[0] + ey_std[0]
             yield m.x5[N] >= ey_pred[0] - ey_std[0]
         m.term_constraint = ConstraintList(rule=_termSet)
-        
+
+        def _add_term(m):
+            yield m.x0[N] <= 0.1
+            # yield m.x5[N] <= 0.25
+            # yield m.x1[N] == 0
+            # yield m.x2[N] == 0
+
+        if s_pred >= 17:
+            m.term_constraint2 = ConstraintList(rule=_add_term)
+
+
         def _safetySet(m):
             w = clf.coef_[0]
             a = -w
@@ -414,6 +424,7 @@ class hplControl():
 
         # x_pred, u_pred, solver_status = self.lane_track_MPC(x_state, self.N_mpc)
         x_pred, u_pred, solver_status = self.strategy_MPC(x_state, self.N_mpc)
+
 
         if solver_status == False:
 

@@ -8,6 +8,7 @@ Created on Thu Oct 15 13:40:47 2020
 import matplotlib.pyplot as plt
 import pickle
 import numpy as np
+from matplotlib.colors import hsv_to_rgb
 
 
 def plotFromFile(testfile, lineflag = False, spacing = 0):
@@ -157,18 +158,30 @@ def plot_final(map, x_cl=[], offst=10):
 
 
     map.plot_map()
-    # plt.plot(X, Y, '-r')
+
+
+
     for i in range(len(x_cl[0])):
-        color_RGB = (int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max)
-        plt.plot(X[i], Y[i], 'o', color=color_RGB, label='Point')
-    # xmin = min(X)
-    # xmax = max(X)
-    # ymin = min(Y)
-    # ymax = max(Y)
+        if (x_cl[0, i]/Vx_max) <= 0.425:
+            color_HSV = (0.25, int(x_cl[0, i]) / Vx_max, 0.25)
+        elif x_cl[0, i]/Vx_max >=  0.85:
+            color_HSV = (int(x_cl[0, i]) / Vx_max, 0.25, 0.25)
+        else:
+            color_HSV = (0.25, 0.25, int(x_cl[0, i]) / Vx_max)
+        # color_HSV = (int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max)
+        # color_HSV = (int(x_cl[0, i]) / Vx_max, int(x_cl[0, i]) / (Vx_max*1.5), int(x_cl[0, i])/Vx_max)
+        # rgb_colors = hsv_to_rgb(color_HSV)
+        # plt.plot(X[i], Y[i], 'o', color=rgb_colors, label='Point')
+        plt.plot(X[i], Y[i], 'o', color=color_HSV, label='Point')
+
+    plt.title("BARC Car Velocity around Novel Track")
+    plt.xlabel('Global X Position')
+    plt.ylabel('Global Y Position')
+
     xmin = -5
-    xmax = 5
-    ymin = -5
-    ymax = 5
+    xmax = 4
+    ymin = -2
+    ymax = 7
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
     # xmin, xmax, ymin, ymax = plt.axis()
