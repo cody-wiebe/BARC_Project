@@ -374,6 +374,6 @@ class hplStrategy():
         
         # store the means and standard deviations
         strategy_info = np.array([est_s, std_s, est_ey, std_ey])
-              
+
         return est_s, std_s, est_ey, std_ey, strategy_set_xy, strategy_info
         

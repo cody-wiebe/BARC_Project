@@ -54,10 +54,11 @@ def plotFromFile(testfile, lineflag = False, spacing = 0):
     return X, Y, Cur, map, racetime, pframe
 
 
-def plotTrajectory_newmap(map, X,Y):
+def plotTrajectory_newmap(map, X,Y, color_map='-r'):
 
     map.plot_map()    
-    plt.plot(X, Y, '-r')
+    # plt.plot(X, Y, '-r')
+    plt.plot(X, Y, color_map, linewidth=1)
     xmin, xmax, ymin, ymax = plt.axis()
 
     return [xmin, xmax, ymin, ymax]
@@ -94,6 +95,10 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
     # shape of closedloop is 6xSamples
     X = []
     Y = []
+    Vx_max = max(x_cl[0])
+    Vx_min = min(x_cl[0])
+    dev = Vx_max - Vx_min
+    color_map = ((255*x_cl[0])/dev, (255*x_cl[0])/dev, (255*x_cl[0])/dev)
     try:
         if len(x_cl):
             for i in range(0, np.shape(x_cl)[1]):
@@ -116,13 +121,59 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
                 
     plt.plot(Xp,Yp,'g')
     
-    [xm, xx, ym, yx] = plotTrajectory_newmap(map, X,Y)    
+    [xm, xx, ym, yx] = plotTrajectory_newmap(map, X,Y, color_map)
     if offst == 1000:
         plt.axis('scaled')
     else:       
         plt.axis('scaled')
-        plt.axis([X[-1]-offst, X[-1]+offst, Y[-1]-offst, Y[-1]+offst]) 
-    
+        plt.axis([X[-1]-offst, X[-1]+offst, Y[-1]-offst, Y[-1]+offst])
+
+def plot_final(map, x_cl=[], offst=10):
+    # shape of closedloop is 6xSamples
+    X = []
+    Y = []
+    Vx_max = max(x_cl[0])
+    Vx_min = min(x_cl[0])
+    dev = Vx_max - Vx_min
+    color_scale = 1/dev
+    try:
+        if len(x_cl):
+            for i in range(0, np.shape(x_cl)[1]):
+                [x, y] = map.getGlobalPosition(x_cl[4, i], x_cl[5, i], 0)
+                X = np.append(X, x)
+                Y = np.append(Y, y)
+    except:
+        if bool(x_cl.any()):
+            for i in range(0, np.shape(x_cl)[1]):
+                [x, y] = map.getGlobalPosition(x_cl[4, i], x_cl[5, i], 0)
+                X = np.append(X, x)
+                Y = np.append(Y, y)
+
+    if offst == 1000:
+        plt.axis('scaled')
+    else:
+        plt.axis('scaled')
+        plt.axis([X[-1] - offst, X[-1] + offst, Y[-1] - offst, Y[-1] + offst])
+
+
+    map.plot_map()
+    # plt.plot(X, Y, '-r')
+    for i in range(len(x_cl[0])):
+        color_RGB = (int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max, int(x_cl[0, i])/Vx_max)
+        plt.plot(X[i], Y[i], 'o', color=color_RGB, label='Point')
+    # xmin = min(X)
+    # xmax = max(X)
+    # ymin = min(Y)
+    # ymax = max(Y)
+    xmin = -5
+    xmax = 5
+    ymin = -5
+    ymax = 5
+    plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax)
+    # xmin, xmax, ymin, ymax = plt.axis()
+    plt.show()
+
 
 def vehicle_model(x, u, dt, map, model):
     # this function applies the chosen input to the discretized vehicle model 
