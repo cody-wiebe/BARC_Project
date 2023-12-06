@@ -36,7 +36,7 @@ from matplotlib.cm import ScalarMappable
 # -0.542275
 # map = Map2(1.1, 'LShape')
 map = Map2(0.55, 'LShape')
-# map.plot_map()
+map.plot_map()
 # MPC parameters
 T = 15 # number of environment prediction samples --> training input will have length 21
 ds = 1.5 # environment sample step (acts on s)
@@ -75,7 +75,7 @@ HPLMPC = hplControl(T, ds, N_mpc, dt, fint, s_conf_thresh, ey_conf_thresh, map, 
 # print(f'EY0: {ey0}')
 # 7.5754822039753895
 # EY0: 0.5252233678397118
-x_state = np.array([vt*0.8, 0, 0, 0, 0, 0.3]) # vx, vy, wz, epsi, s, ey
+x_state = np.array([0.0, 0, 0, 0, 0, 0.0]) # vx, vy, wz, epsi, s, ey
 # x_state = np.array([5, 0, 0, 0, 0, 0.5252233678397118]) # vx, vy, wz, epsi, s, ey
 # x_state = np.array([vx0, 0, 0, 0, 0, ey0]) # vx, vy, wz, epsi, s, ey
 
@@ -91,75 +91,87 @@ counter = 0
 # while the predicted s-state of the vehicle is less than track_length:
 
 def stop_plot():
-    time.sleep(0.3)
+    time.sleep(0.2)
     plt.close()
 
 
 print(f'MAP Tracklength: {map.TrackLength}')
-while x_pred[4, -1] < map.TrackLength:
-# while counter <= 250:
-    counter +=1
-    # evaluate GPs
-    est_s, std_s, est_ey, std_ey, strategy_set, centers = AeBeUsStrat.evaluateStrategy(x_state)
 
-    #print('Centers: ')
-    #print(centers)
-    # evaluate control
-    x_pred, u_pred = HPLMPC.solve(x_state, std_s, std_ey, centers)
-    
-    # store predicted state signals
+while x_pred[4, -1] < map.TrackLength:
     try:
-        x_pred_stored = np.vstack((x_pred_stored, x_pred))
-    except:
-        pass
-    
-    # append applied input
-    u = u_pred[:,0]
-    u_closedloop = np.hstack((u_closedloop, np.reshape(u,(2,1))))
-    
-    # apply input to system 
-    x_state = vehicle_model(x_state, u, dt, map, model)
-    # round to avoid numerical disasters
-    eps = 1e-4
-    x_state = np.array([round(i,3) for i in x_state])
-    while abs(x_state[2])>=1.569:
-        x_state[2] -= eps*sign(x_state[2])
-    while abs(x_state[5])>=0.8:
-        x_state[5] -= eps*sign(x_state[5])
-    
-    # save important quantities for next round (predicted inputs, predicted state)
-    try:
-        x_closedloop = np.hstack((x_closedloop, np.reshape(x_state,(6,1))))
+    # while counter <= 250:
+        counter +=1
+        # evaluate GPs
+        est_s, std_s, est_ey, std_ey, strategy_set, centers = AeBeUsStrat.evaluateStrategy(x_state)
+
+        #print('Centers: ')
+        #print(centers)
+        # evaluate control
+        # x_pred, u_pred, status = HPLMPC.solve(x_state, std_s, std_ey, centers)
+        l = HPLMPC.solve(x_state, std_s, std_ey, centers)
+        print(f'x_pred: {l[0]}')
+        print(f'u_pred: {l[1]}')
+        # print(f': {l[2]}')
+
+        x_pred = l[0]
+        u_pred = l[1]
+        solver_flag = l[2]
+        # store predicted state signals
+        try:
+            x_pred_stored = np.vstack((x_pred_stored, x_pred))
+        except:
+            pass
+
+        # append applied input
+        u = u_pred[:, 0]
+        u_closedloop = np.hstack((u_closedloop, np.reshape(u,(2,1))))
+
+        # apply input to system
+        # x_state = vehicle_model(x_state, u, dt, map, model)
+        # round to avoid numerical disasters
+        eps = 1e-4
+        x_state = np.array([round(i,3) for i in x_state])
+        while abs(x_state[2])>=1.569:
+            x_state[2] -= eps*sign(x_state[2])
+        while abs(x_state[5])>=0.8:
+            x_state[5] -= eps*sign(x_state[5])
+
+        # save important quantities for next round (predicted inputs, predicted state)
+        try:
+            x_closedloop = np.hstack((x_closedloop, np.reshape(x_state,(6,1))))
+        except Exception as e:
+            pass
+
+        # plot the closedloop thus far
+        # fig, ax = plt.subplots(1)
+        # ax.add_patch(strategy_set)
+        # print(counter)
+        #print(x_pred[2])
+        # print(x_pred[0])
+        # print(x_pred[1])
+
+
+        if plotting_flag:
+            for st in HPLMPC.set_list:
+                if st != []:
+                    rect_pts_xy = np.array([map.getGlobalPosition(st[0] - st[1], st[2] - st[3],0)])
+                    rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] + st[1], st[2] - st[3], 0), (1,-1))))
+                    rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] + st[1], st[2] + st[3], 0), (1,-1))))
+                    rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] - st[1], st[2] + st[3], 0), (1,-1))))
+                    ax.add_patch(Polygon(rect_pts_xy, True, color = 'g',alpha = 0.3))
+
+        # if counter > 60:
+        #     print(x_pred[4,-1])
+        plot_closed_loop(map, x_closedloop, x_pred=x_pred[:, :HPLMPC.N + 1], offst=20)
+        thread1 = threading.Thread(target=stop_plot)
+        thread1.start()
+        plt.show()
+
+        thread1.join()
+        # plt.close()
+
     except Exception as e:
         pass
-
-    # plot the closedloop thus far 
-    # fig, ax = plt.subplots(1)
-    # ax.add_patch(strategy_set)
-    # print(counter)
-    #print(x_pred[2])
-    # print(x_pred[0])
-    # print(x_pred[1])
-
-
-    if plotting_flag:
-        for st in HPLMPC.set_list:
-            if st != []:
-                rect_pts_xy = np.array([map.getGlobalPosition(st[0] - st[1], st[2] - st[3],0)])
-                rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] + st[1], st[2] - st[3], 0), (1,-1))))
-                rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] + st[1], st[2] + st[3], 0), (1,-1))))
-                rect_pts_xy = np.vstack((rect_pts_xy, np.reshape(map.getGlobalPosition(st[0] - st[1], st[2] + st[3], 0), (1,-1))))
-                ax.add_patch(Polygon(rect_pts_xy, True, color = 'g',alpha = 0.3))
-       
-    # if counter > 60:
-    #     print(x_pred[4,-1])
-    #     plot_closed_loop(map, x_closedloop, x_pred=x_pred[:, :HPLMPC.N + 1], offst=20)
-    #     plt.show()
-    #thread1 = threading.Thread(target=stop_plot)
-    #thread1.start()
-
-    #thread1.join()
-    # plt.close()
 x_closedloop = np.hstack((x_closedloop, x_pred))
 hpl_time = np.shape(x_closedloop)[1]*dt
 x_pred_stored = x_pred_stored[1:,:]
