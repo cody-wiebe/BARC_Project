@@ -75,7 +75,7 @@ HPLMPC = hplControl(T, ds, N_mpc, dt, fint, s_conf_thresh, ey_conf_thresh, map, 
 # print(f'EY0: {ey0}')
 # 7.5754822039753895
 # EY0: 0.5252233678397118
-x_state = np.array([0.0, 0, 0, 0, 0, 0.0]) # vx, vy, wz, epsi, s, ey
+x_state = np.array([0.0, 0, 0, 0, 0, 0.2]) # vx, vy, wz, epsi, s, ey
 # x_state = np.array([5, 0, 0, 0, 0, 0.5252233678397118]) # vx, vy, wz, epsi, s, ey
 # x_state = np.array([vx0, 0, 0, 0, 0, ey0]) # vx, vy, wz, epsi, s, ey
 
@@ -108,9 +108,11 @@ while x_pred[4, -1] < map.TrackLength:
         #print(centers)
         # evaluate control
         # x_pred, u_pred, status = HPLMPC.solve(x_state, std_s, std_ey, centers)
+        start = time.time()
         l = HPLMPC.solve(x_state, std_s, std_ey, centers)
-        print(f'x_pred: {l[0]}')
-        print(f'u_pred: {l[1]}')
+        print(f'TIME: {time.time() - start}')
+        # print(f'x_pred: {l[0]}')
+        # print(f'u_pred: {l[1]}')
         # print(f': {l[2]}')
 
         x_pred = l[0]
@@ -127,7 +129,7 @@ while x_pred[4, -1] < map.TrackLength:
         u_closedloop = np.hstack((u_closedloop, np.reshape(u,(2,1))))
 
         # apply input to system
-        # x_state = vehicle_model(x_state, u, dt, map, model)
+        x_state = vehicle_model(x_state, u, dt, map, model)
         # round to avoid numerical disasters
         eps = 1e-4
         x_state = np.array([round(i,3) for i in x_state])

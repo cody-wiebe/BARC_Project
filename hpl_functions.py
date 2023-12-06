@@ -98,7 +98,8 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
     Y = []
     Vx_max = max(x_cl[0])
     Vx_min = min(x_cl[0])
-    dev = Vx_max - Vx_min
+    # dev = Vx_max - Vx_min
+    dev = 1
     color_map = ((255*x_cl[0])/dev, (255*x_cl[0])/dev, (255*x_cl[0])/dev)
     try:
         if len(x_cl):

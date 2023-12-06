@@ -3,14 +3,15 @@
 
 import pickle
 import numpy as np
-from pyomo.environ import RangeSet, atan
-from pyomo.dae import *
+# from pyomo.environ import *
+# from pyomo.dae import *
 import casadi as ca
 from casadi import MX, sum1, vertcat, atan2, asin, acos, sin, cos
 
 
 class hplControl():
     def __init__(self, T, ds, N_mpc, dt, fint, s_conf_thresh, ey_conf_thresh, map, vt, model, gamma, beta):
+
         self.T = T # number of environment prediction samples --> training input will have length 21
         self.ds = ds # environment sample step (acts on s)
         self.N_mpc = N_mpc # number of timesteps (of length dt) for the MPC horizon 
@@ -34,7 +35,126 @@ class hplControl():
         # scaler info is used to transform the states into standardized ones
         self.scaler = pickle.load(open('SafetyControl/scaler.pkl','rb'))
         self.clf = pickle.load(open('SafetyControl/clf.pkl','rb'))
-        
+
+        self.init_time = True
+        self.first_time = True
+        self.prev_N = -1
+
+        self.TrackHalfW = None
+        self.TrackLength = None
+        self.opti = None
+        self.mass = None
+        self.lf = None
+        self.lr = None
+        self.Iz = None
+        self.Df = None
+        self.Cf = None
+        self.Bf = None
+        self.Dr = None
+        self.Cr = None
+        self.Br = None
+        self.sf = None
+        self.u0 = None
+        self.u1 = None
+        self.alpha_f = None
+        self.alpha_r = None
+        self.Fyf = None
+        self.Fyr = None
+        self.x0 = None
+        self.x1 = None
+        self.x2 = None
+        self.x3 = None
+        self.x4 = None
+        self.x5 = None
+        self.slack0 = None
+        self.slack1 = None
+        self.slack2 = None
+        self.slack3 = None
+        self.slack4 = None
+        self.slack5 = None
+
+    def init_vars(self, x, N, accel):
+        self.init_time = False
+        self.prev_N = N
+
+        self.TrackHalfW = self.map.width
+        self.TrackLength = self.map.TrackLength
+        self.opti = ca.Opti()
+        self.mass = 1.98
+        self.lf = 0.125
+        self.lr = 0.125
+        self.Iz = 0.024
+        self.Df = 0.8 * self.mass * 9.81 / 2.0
+        self.Cf = 1.25
+        self.Bf = 1.0
+        self.Dr = 0.8 * self.mass * 9.81 / 2.0
+        self.Cr = 1.25
+        self.Br = 1.0
+        self.sf = self.opti.parameter()
+        self.opti.set_value(self.sf, self.TrackLength)
+        self.u0 = self.opti.variable(N - 1)
+        self.u1 = self.opti.variable(N - 1)
+        self.alpha_f = self.opti.variable(N)
+        self.alpha_r = self.opti.variable(N)
+        self.Fyf = self.opti.variable(N)
+        self.Fyr = self.opti.variable(N)
+        self.x0 = self.opti.variable(N)
+        self.x1 = self.opti.variable(N)
+        self.x2 = self.opti.variable(N)
+        self.x3 = self.opti.variable(N)
+        self.x4 = self.opti.variable(N)
+        self.x5 = self.opti.variable(N)
+        self.slack0 = self.opti.variable()
+        self.slack1 = self.opti.variable()
+        self.slack2 = self.opti.variable()
+        self.slack3 = self.opti.variable()
+        self.slack4 = self.opti.variable()
+        self.slack5 = self.opti.variable()
+
+        self.opti.subject_to(self.opti.bounded(-1, self.u0, 1))
+        self.opti.subject_to(self.opti.bounded(-0.5, self.u1, 0.5))
+        self.opti.subject_to(self.opti.bounded(-2, self.alpha_f, 2))
+        self.opti.subject_to(self.opti.bounded(-2, self.alpha_r, 2))
+        self.opti.subject_to(self.opti.bounded(-self.mass * 9.8, self.Fyf, self.mass * 9.8))
+        self.opti.subject_to(self.opti.bounded(-self.mass * 9.8, self.Fyr, self.mass * 9.8))
+        self.opti.subject_to(self.opti.bounded(0, self.x0, 10))
+        self.opti.subject_to(self.opti.bounded(-10, self.x1, 10))
+        self.opti.subject_to(self.opti.bounded(-0.5 * 3.14, self.x2, 0.5 * 3.14))
+        self.opti.subject_to(self.opti.bounded(-0.3 * 3.1416, self.x3, 0.3 * 3.1416))
+        self.opti.subject_to(self.opti.bounded(0, self.x4, self.sf))
+        self.opti.subject_to(self.opti.bounded(-self.TrackHalfW, self.x5, self.TrackHalfW))
+        self.opti.set_initial(self.u0, 0)
+        self.opti.set_initial(self.u1, 0)
+        self.opti.set_initial(self.alpha_f, 0)
+        self.opti.set_initial(self.alpha_r, 0)
+        self.opti.set_initial(self.Fyf, 0)
+        self.opti.set_initial(self.Fyr, 0)
+        self.opti.set_initial(self.x0, 0)
+        self.opti.set_initial(self.x1, 0.01)
+        self.opti.set_initial(self.x2, 0)
+        self.opti.set_initial(self.x4, 0)
+        self.opti.set_initial(self.x5, 0)
+        self.opti.set_initial(self.slack0, 0)
+        self.opti.set_initial(self.slack1, 0)
+        self.opti.set_initial(self.slack2, 0)
+        self.opti.set_initial(self.slack3, 0)
+        self.opti.set_initial(self.slack4, 0)
+        self.opti.set_initial(self.slack5, 0)
+
+        if accel:
+            sum = 0
+            for i in range(N):
+                sum += (self.vt - self.x0[i]) ** 2
+            self.opti.minimize(1000 * (self.slack2 ** 2 + self.slack3 ** 2) + sum)
+        else:
+            sum = 0
+            for i in range(N):
+                sum += (self.x5[i] - 0.2) ** 2 + self.gamma * (self.vt - self.x0[i]) ** 2
+            self.opti.minimize(1000 * (self.slack2 ** 2 + self.slack3 ** 2) + sum)
+
+        solver_opts = {'ipopt': {'print_level': 0}}
+        self.opti.solver("ipopt", solver_opts)
+
     def curv_pred_LMPC(self, x, N):
    
         pred_curve = self.map.getCurvature(x[4])
@@ -212,286 +332,39 @@ class hplControl():
         
         return [x_pred, u_pred, solver_flag]
 
-    # def lane_track_MPC_casadi(self, x, N):
-    #
-    #     # calculates the center-lane tracking MPC control while keeping the velocity close to vd
-    #     # gamma tunes weight of tracking centerline vs tracking velocity (suggest 0.1)
-    #     cv_pred = self.curv_pred_LMPC(x, N)
-    #     TrackHalfW = self.map.width
-    #     TrackLength = self.map.TrackLength
-    #     opti = ca.Opti()
-    #
-    #     if self.model == 'BARC':
-    #         mass = 1.98
-    #         lf = 0.125
-    #         lr = 0.125
-    #         Iz = 0.024
-    #         Df = 0.8 * mass * 9.81 / 2.0
-    #         Cf = 1.25
-    #         Bf = 1.0
-    #         Dr = 0.8 * mass * 9.81 / 2.0
-    #         Cr = 1.25
-    #         Br = 1.0
-    #         m = MX()
-    #
-    #         # Parameters
-    #         sf = TrackLength
-    #
-    #         # Time range
-    #         t = range(N + 1)
-    #
-    #         # Input variables
-    #         u0 = MX.sym('u0', N)
-    #         u1 = MX.sym('u1', N)
-    #         alpha_f = MX.sym('alpha_f', N + 1)
-    #         alpha_r = MX.sym('alpha_r', N + 1)
-    #         Fyf = MX.sym('Fyf', N + 1)
-    #         Fyr = MX.sym('Fyr', N + 1)
-    #
-    #         # State variables
-    #         x0 = MX.sym('x0', N + 1)
-    #         x1 = MX.sym('x1', N + 1)
-    #         x2 = MX.sym('x2', N + 1)
-    #         x3 = MX.sym('x3', N + 1)
-    #         x4 = MX.sym('x4', N + 1)
-    #         x5 = MX.sym('x5', N + 1)
-    #
-    #         # Slack variables
-    #         slack0 = MX.sym('slack0')
-    #         slack1 = MX.sym('slack1')
-    #         slack2 = MX.sym('slack2')
-    #         slack3 = MX.sym('slack3')
-    #         slack4 = MX.sym('slack4')
-    #         slack5 = MX.sym('slack5')
-    #
-    #         # Bounds
-    #         bounds = {'lbx': 0.01, 'ubx': 10.0}
-    #
-    #     # Objective function -  minimize norm of ey along all predicted time steps, and deviation from vt
-    #     slack_obj = 1000 * (slack2 ** 2 + slack3 ** 2)
-    #     exp = x5**2 + self.gamma +(self.vt - x0)**2
-    #     track_obj = sum1(exp)
-    #     obj = slack_obj + track_obj
-    #
-    #     # m.obj = Objective(expr=m.slack_obj + m.track_obj, sense=minimize)
-    #
-    #     # sideslip and lateral force
-    #     def _alphafc(m, t):
-    #         return m.alpha_f[t] == m.u1[t] - atan((m.x1[t] + lf * m.x2[t]) / (m.x0[t]))
-    #
-    #     m.c4 = Constraint(m.tnotN, rule=_alphafc)
-    #
-    #     def _alpharc(m, t):
-    #         return m.alpha_r[t] == -atan((m.x1[t] - lr * m.x2[t]) / (m.x0[t]))
-    #
-    #     m.c3 = Constraint(m.tnotN, rule=_alpharc)
-    #
-    #     def _Fyfc(m, t):
-    #         return m.Fyf[t] == 2 * Df * sin(Cf * atan(Bf * m.alpha_f[t]))
-    #
-    #     m.c2 = Constraint(m.tnotN, rule=_Fyfc)
-    #
-    #     def _Fyrc(m, t):
-    #         return m.Fyr[t] == 2 * Dr * sin(Cr * atan(Br * m.alpha_r[t]))
-    #
-    #     m.c1 = Constraint(m.tnotN, rule=_Fyrc)
-    #
-    #     def _x0(m, t):  # vx
-    #         return m.x0[t + 1] == m.x0[t] + self.dt * (m.u0[t] - 1 / mass * m.Fyf[t] * sin(m.u1[t]) + m.x2[t] * m.x1[t])
-    #
-    #     m.x0constraint = Constraint(m.tnotN, rule=_x0)
-    #
-    #     def _x1(m, t):  # vy
-    #         return m.x1[t + 1] == m.x1[t] + self.dt * (
-    #                     1 / mass * (m.Fyf[t] * cos(m.u1[t]) + m.Fyr[t]) - m.x2[t] * m.x0[t])
-    #
-    #     m.x1constraint = Constraint(m.tnotN, rule=_x1)
-    #
-    #     def _x2(m, t):  # wz
-    #         return m.x2[t + 1] == m.x2[t] + self.dt * (1 / Iz * (lf * m.Fyf[t] * cos(m.u1[t]) - lr * m.Fyr[t]))
-    #
-    #     m.x2constraint = Constraint(m.tnotN, rule=_x2)
-    #
-    #     def _x3(m, t):  # epsi
-    #         cur = cv_pred[t]
-    #         return m.x3[t + 1] == m.x3[t] + self.dt * (
-    #                     m.x2[t] - (m.x0[t] * cos(m.x3[t]) - m.x1[t] * sin(m.x3[t])) / (1 - cur * m.x5[t]) * cur)
-    #
-    #     m.x3constraint = Constraint(m.tnotN, rule=_x3)
-    #
-    #     def _x4(m, t):  # s
-    #         cur = cv_pred[t]
-    #         return m.x4[t + 1] == m.x4[t] + self.dt * (
-    #                     (m.x0[t] * cos(m.x3[t]) - m.x1[t] * sin(m.x3[t])) / (1 - cur * m.x5[t]))
-    #
-    #     m.x4constraint = Constraint(m.tnotN, rule=_x4)
-    #
-    #     def _x5(m, t):  # ey
-    #         return m.x5[t + 1] == m.x5[t] + self.dt * (m.x0[t] * sin(m.x3[t]) + m.x1[t] * cos(m.x3[t]))
-    #
-    #     m.x5constraint = Constraint(m.tnotN, rule=_x5)
-    #
-    #     def _init(m):
-    #         yield m.x0[0] == x[0]
-    #         yield m.x1[0] == x[1]
-    #         yield m.x2[0] + m.slack2 == x[2]
-    #         yield m.x3[0] + m.slack3 == x[3]
-    #         yield m.x4[0] == x[4]
-    #         yield m.x5[0] == x[5]
-    #
-    #     m.init_conditions = ConstraintList(rule=_init)
-    #
-    #     solver = SolverFactory('ipopt')
-    #     solver.options["print_level"] = 1
-    #     results = solver.solve(m, tee=False)
-    #
-    #     if results.solver.status == SolverStatus.ok:
-    #         solver_flag = True
-    #     else:
-    #         solver_flag = False
-    #         return 0, 0, solver_flag
-    #
-    #     VX = value(m.x0[0])
-    #     VY = value(m.x1[0])
-    #     WZ = value(m.x2[0])
-    #     EPSI = value(m.x3[0])
-    #     S = value(m.x4[0])
-    #     EY = value(m.x5[0])
-    #
-    #     for t in range(1, N + 1):
-    #         VX = np.hstack((VX, (value(m.x0[t]))))
-    #         VY = np.hstack((VY, (value(m.x1[t]))))
-    #         WZ = np.hstack((WZ, (value(m.x2[t]))))
-    #         EPSI = np.hstack((EPSI, (value(m.x3[t]))))
-    #         S = np.hstack((S, (value(m.x4[t]))))
-    #         EY = np.hstack((EY, (value(m.x5[t]))))
-    #
-    #     x_pred = np.vstack((VX, VY, WZ, EPSI, S, EY))
-    #
-    #     A = value(m.u0[0])
-    #     DELTA = value(m.u1[0])
-    #
-    #     for t in range(1, N):
-    #         A = np.hstack((A, (value(m.u0[t]))))
-    #         DELTA = np.hstack((DELTA, (value(m.u1[t]))))
-    #
-    #     u_pred = np.vstack((A, DELTA))
-    #
-    #     return x_pred, u_pred, solver_flag
-
     def lane_track_MPC_casadi(self, x, N):
+        print("OG ME AYAAAAA")
 
         # calculates the center-lane tracking MPC control while keeping the velocity close to vd
         # gamma tunes weight of tracking centerline vs tracking velocity (suggest 0.1)
         cv_pred = self.curv_pred_LMPC(x, N)
-        TrackHalfW = self.map.width
-        TrackLength = self.map.TrackLength
-        opti = ca.Opti()
+        if self.first_time or self.prev_N != N:
+            self.init_vars(x, N, False)
 
-        mass = 1.98
-        lf = 0.125
-        lr = 0.125
-        Iz = 0.024
-        Df = 0.8 * mass * 9.81 / 2.0
-        Cf = 1.25
-        Bf = 1.0
-        Dr = 0.8 * mass * 9.81 / 2.0
-        Cr = 1.25
-        Br = 1.0
-        sf = opti.parameter()
-        opti.set_value(sf, TrackLength)
-        u0 = opti.variable(N-1)
-        u1 = opti.variable(N-1)
-        alpha_f = opti.variable(N)
-        alpha_r = opti.variable(N)
-        Fyf = opti.variable(N)
-        Fyr = opti.variable(N)
-        x0 = opti.variable(N)
-        x1 = opti.variable(N)
-        x2 = opti.variable(N)
-        x3 = opti.variable(N)
-        x4 = opti.variable(N)
-        x5 = opti.variable(N)
-        slack0 = opti.variable()
-        slack1 = opti.variable()
-        slack2 = opti.variable()
-        slack3 = opti.variable()
-        slack4 = opti.variable()
-        slack5 = opti.variable()
+        self.first_time = False
+        self.opti.subject_to()
 
-        opti.subject_to(opti.bounded(-1, u0, 1))
-        opti.subject_to(opti.bounded(-0.5, u1, 0.5))
-        opti.subject_to(opti.bounded(-2, alpha_f, 2))
-        opti.subject_to(opti.bounded(-2, alpha_r, 2))
-        opti.subject_to(opti.bounded(-mass*9.8, Fyf, mass*9.8))
-        opti.subject_to(opti.bounded(-mass*9.8, Fyr, mass*9.8))
-        opti.subject_to(opti.bounded(0, x0, 10))
-        opti.subject_to(opti.bounded(-10, x1, 10))
-        opti.subject_to(opti.bounded(-0.5 * 3.14, x2, 0.5 * 3.14))
-        opti.subject_to(opti.bounded(-0.3 * 3.1416, x3, 0.3 * 3.1416))
-        opti.subject_to(opti.bounded(0, x4, sf))
-        opti.subject_to(opti.bounded(-TrackHalfW, x5, TrackHalfW))
-
-        opti.set_initial(u0, 0)
-        opti.set_initial(u1, 0)
-        opti.set_initial(alpha_f, 0)
-        opti.set_initial(alpha_r, 0)
-        opti.set_initial(Fyf, 0)
-        opti.set_initial(Fyr, 0)
-        opti.set_initial(x0, 0)
-        opti.set_initial(x1, 0.01)
-        opti.set_initial(x2, 0)
-        # opti.set_initial(x3, 0)
-        opti.set_initial(x4, 0)
-        opti.set_initial(x5, 0)
-        opti.set_initial(slack0, 0)
-        opti.set_initial(slack1, 0)
-        opti.set_initial(slack2, 0)
-        opti.set_initial(slack3, 0)
-        opti.set_initial(slack4, 0)
-        opti.set_initial(slack5, 0)
-
-        sum = 0
-        for i in range(N):
-            sum += x5[i]**2 + self.gamma*(self.vt - x0[i])**2
-        opti.minimize(1000*(slack2**2 + slack3**2) + sum)
-        # Objective function -  minimize norm of ey along all predicted time steps, and deviation from vt
-        # m.slack_obj = 1000 * (m.slack2 ** 2 + m.slack3 ** 2)
-        # m.track_obj = sum(m.x5[i] ** 2 + self.gamma * (self.vt - m.x0[i]) ** 2 for i in m.t)
-        # m.obj = Objective(expr=m.slack_obj + m.track_obj, sense=minimize)
         for i in range(N-1):
             cur = cv_pred[i]
-            opti.subject_to(alpha_f[i] == u1[i] - atan2((x1[i] + lf * x2[i]), x0[i]))
-            opti.subject_to(alpha_r[i] == -atan2((x1[i] - lr * x2[i]), x0[i]))
-            opti.subject_to(Fyf[i] == 2 * Df * sin(Cf * atan2((Bf * alpha_f[i]), 1)))
-            opti.subject_to(Fyr[i] == 2 * Dr * sin(Cr * atan2((Br * alpha_r[i]), 1)))
-            opti.subject_to(x0[i + 1] == x0[i] + self.dt * (u0[i] - 1 / mass * Fyf[i] * sin(u1[i]) + x2[i] * x1[i]))
-            opti.subject_to(x1[i + 1] == x1[i] + self.dt * (1 / mass * (Fyf[i] * cos(u1[i]) + Fyr[i]) - x2[i] * x0[i]))
-            opti.subject_to(x2[i + 1] == x2[i] + self.dt * (1 / Iz * (lf * Fyf[i] * cos(u1[i]) - lr * Fyr[i])))
-            opti.subject_to(x3[i + 1] == x3[i] + self.dt * (x2[i] - (x0[i] * cos(x3[i]) - x1[i] * sin(x3[i])) / (1 - cur * x5[i]) * cur))
-            opti.subject_to(x4[i + 1] == x4[i] + self.dt * ((x0[i] * cos(x3[i]) - x1[i] * sin(x3[i])) / (1 - cur * x5[i])))
-            opti.subject_to(x5[i + 1] == x5[i] + self.dt * (x0[i] * sin(x3[i]) + x1[i] * cos(x3[i])))
+            self.opti.subject_to(self.alpha_f[i] == self.u1[i] - atan2((self.x1[i] + self.lf * self.x2[i]), self.x0[i]))
+            self.opti.subject_to(self.alpha_r[i] == -atan2((self.x1[i] - self.lr * self.x2[i]), self.x0[i]))
+            self.opti.subject_to(self.Fyf[i] == 2 * self.Df * sin(self.Cf * atan2((self.Bf * self.alpha_f[i]), 1)))
+            self.opti.subject_to(self.Fyr[i] == 2 * self.Dr * sin(self.Cr * atan2((self.Br * self.alpha_r[i]), 1)))
+            self.opti.subject_to(self.x0[i + 1] == self.x0[i] + self.dt * (self.u0[i] - 1 / self.mass * self.Fyf[i] * sin(self.u1[i]) + self.x2[i] * self.x1[i]))
+            self.opti.subject_to(self.x1[i + 1] == self.x1[i] + self.dt * (1 / self.mass * (self.Fyf[i] * cos(self.u1[i]) + self.Fyr[i]) - self.x2[i] * self.x0[i]))
+            self.opti.subject_to(self.x2[i + 1] == self.x2[i] + self.dt * (1 / self.Iz * (self.lf * self.Fyf[i] * cos(self.u1[i]) - self.lr * self.Fyr[i])))
+            self.opti.subject_to(self.x3[i + 1] == self.x3[i] + self.dt * (self.x2[i] - (self.x0[i] * cos(self.x3[i]) - self.x1[i] * sin(self.x3[i])) / (1 - cur * self.x5[i]) * cur))
+            self.opti.subject_to(self.x4[i + 1] == self.x4[i] + self.dt * ((self.x0[i] * cos(self.x3[i]) - self.x1[i] * sin(self.x3[i])) / (1 - cur * self.x5[i])))
+            self.opti.subject_to(self.x5[i + 1] == self.x5[i] + self.dt * (self.x0[i] * sin(self.x3[i]) + self.x1[i] * cos(self.x3[i])))
 
-        opti.subject_to(x0[0] == x[0])
-        opti.subject_to(x1[0] == x[1])
-        opti.subject_to(x2[0] + slack2 == x[2])
-        opti.subject_to(x3[0] + slack3 == x[3])
-        opti.subject_to(x4[0] == x[4])
-        opti.subject_to(x5[0] == x[5])
+        self.opti.subject_to(self.x0[0] == x[0])
+        self.opti.subject_to(self.x1[0] == x[1])
+        self.opti.subject_to(self.x2[0] + self.slack2 == x[2])
+        self.opti.subject_to(self.x3[0] + self.slack3 == x[3])
+        self.opti.subject_to(self.x4[0] == x[4])
+        self.opti.subject_to(self.x5[0] == x[5])
 
-        solver_opts = {'ipopt': {'print_level': 0}}
-        opti.solver("ipopt", solver_opts)
-        sol = opti.solve()
-        # print(f'X: {sol.value(x0)}')
-        # print(f'Type X0: {type(sol.value(x0))}')
-        # print(f'Type X1: {type(sol.value(x1))}')
-        # print(f'Type X2: {type(sol.value(x2))}')
-        # print(f'Type X3: {type(sol.value(x3))}')
-        # print(f'Type X4: {type(sol.value(x4))}')
-        # print(f'Type X5: {type(sol.value(x5))}')
-        # print(f'Type U0: {type(sol.value(u0))}')
-        # print(f'Type U1: {type(sol.value(u1))}')
-        print(f"STATSUSSSSS: {sol.stats()['return_status']}")
+        sol = self.opti.solve()
         if sol.stats()['return_status'] == 'Solve_Succeeded':
             solver_flag = True
         else:
@@ -500,152 +373,70 @@ class hplControl():
 
         try:
 
-            VX = sol.value(x0[0])
-            VY = sol.value(x1[0])
-            WZ = sol.value(x2[0])
-            EPSI = sol.value(x3[0])
-            S = sol.value(x4[0])
-            EY = sol.value(x5[0])
+            VX = sol.value(self.x0[0])
+            VY = sol.value(self.x1[0])
+            WZ = sol.value(self.x2[0])
+            EPSI = sol.value(self.x3[0])
+            S = sol.value(self.x4[0])
+            EY = sol.value(self.x5[0])
 
             for t in range(1, N):
 
-                VX = np.hstack((VX, (sol.value(x0[t]))))
-                VY = np.hstack((VY, (sol.value(x1[t]))))
-                WZ = np.hstack((WZ, (sol.value(x2[t]))))
-                EPSI = np.hstack((EPSI, (sol.value(x3[t]))))
-                S = np.hstack((S, (sol.value(x4[t]))))
-                EY = np.hstack((EY, (sol.value(x5[t]))))
+                VX = np.hstack((VX, (sol.value(self.x0[t]))))
+                VY = np.hstack((VY, (sol.value(self.x1[t]))))
+                WZ = np.hstack((WZ, (sol.value(self.x2[t]))))
+                EPSI = np.hstack((EPSI, (sol.value(self.x3[t]))))
+                S = np.hstack((S, (sol.value(self.x4[t]))))
+                EY = np.hstack((EY, (sol.value(self.x5[t]))))
 
             x_pred = np.vstack((VX, VY, WZ, EPSI, S, EY))
 
-            A = sol.value(u0[0])
-            DELTA = sol.value(u1[0])
+            A = sol.value(self.u0[0])
+            DELTA = sol.value(self.u1[0])
 
             for t in range(1, N-1):
-                A = np.hstack((A, (sol.value(u0[t]))))
-                DELTA = np.hstack((DELTA, (sol.value(u1[t]))))
+                A = np.hstack((A, (sol.value(self.u0[t]))))
+                DELTA = np.hstack((DELTA, (sol.value(self.u1[t]))))
             u_pred = np.vstack((A, DELTA))
             return [x_pred, u_pred, solver_flag]
         except Exception as e:
             print(e)
 
     def lane_track_MPC_accel(self, x, N):
+        print("START WLE ME HAIIIIII")
 
         # calculates the center-lane tracking MPC control while keeping the velocity close to vd
         # gamma tunes weight of tracking centerline vs tracking velocity (suggest 0.1)
         cv_pred = self.curv_pred_LMPC(x, N)
-        TrackHalfW = self.map.width
-        TrackLength = self.map.TrackLength
-        opti = ca.Opti()
+        if self.init_time or self.prev_N != N:
+            self.init_vars(x, N, True)
 
-        mass = 1.98
-        lf = 0.125
-        lr = 0.125
-        Iz = 0.024
-        Df = 0.8 * mass * 9.81 / 2.0
-        Cf = 1.25
-        Bf = 1.0
-        Dr = 0.8 * mass * 9.81 / 2.0
-        Cr = 1.25
-        Br = 1.0
-        sf = opti.parameter()
-        opti.set_value(sf, TrackLength)
-        u0 = opti.variable(N - 1)
-        u1 = opti.variable(N - 1)
-        alpha_f = opti.variable(N)
-        alpha_r = opti.variable(N)
-        Fyf = opti.variable(N)
-        Fyr = opti.variable(N)
-        x0 = opti.variable(N)
-        x1 = opti.variable(N)
-        x2 = opti.variable(N)
-        x3 = opti.variable(N)
-        x4 = opti.variable(N)
-        x5 = opti.variable(N)
-        slack0 = opti.variable()
-        slack1 = opti.variable()
-        slack2 = opti.variable()
-        slack3 = opti.variable()
-        slack4 = opti.variable()
-        slack5 = opti.variable()
+        self.opti.subject_to()
 
-        opti.subject_to(opti.bounded(-1, u0, 1))
-        opti.subject_to(opti.bounded(-0.5, u1, 0.5))
-        opti.subject_to(opti.bounded(-2, alpha_f, 2))
-        opti.subject_to(opti.bounded(-2, alpha_r, 2))
-        opti.subject_to(opti.bounded(-mass * 9.8, Fyf, mass * 9.8))
-        opti.subject_to(opti.bounded(-mass * 9.8, Fyr, mass * 9.8))
-        opti.subject_to(opti.bounded(0, x0, 10))
-        opti.subject_to(opti.bounded(-10, x1, 10))
-        opti.subject_to(opti.bounded(-0.5 * 3.14, x2, 0.5 * 3.14))
-        opti.subject_to(opti.bounded(-0.3 * 3.1416, x3, 0.3 * 3.1416))
-        opti.subject_to(opti.bounded(0, x4, sf))
-        opti.subject_to(opti.bounded(-TrackHalfW, x5, TrackHalfW))
-
-        opti.set_initial(u0, 0)
-        opti.set_initial(u1, 0)
-        opti.set_initial(alpha_f, 0)
-        opti.set_initial(alpha_r, 0)
-        opti.set_initial(Fyf, 0)
-        opti.set_initial(Fyr, 0)
-        opti.set_initial(x0, 0)
-        opti.set_initial(x1, 0.01)
-        opti.set_initial(x2, 0)
-        # opti.set_initial(x3, 0)
-        opti.set_initial(x4, 0)
-        opti.set_initial(x5, 0)
-        opti.set_initial(slack0, 0)
-        opti.set_initial(slack1, 0)
-        opti.set_initial(slack2, 0)
-        opti.set_initial(slack3, 0)
-        opti.set_initial(slack4, 0)
-        opti.set_initial(slack5, 0)
-
-        sum = 0
-        for i in range(N):
-            # sum += x5[i] ** 2 + self.gamma * (self.vt - x0[i]) ** 2
-            sum +=  (self.vt - x0[i]) ** 2
-        opti.minimize(1000 * (slack2 ** 2 + slack3 ** 2) + sum)
-        # opti.minimize(sum)
-        # Objective function -  minimize norm of ey along all predicted time steps, and deviation from vt
-        # m.slack_obj = 1000 * (m.slack2 ** 2 + m.slack3 ** 2)
-        # m.track_obj = sum(m.x5[i] ** 2 + self.gamma * (self.vt - m.x0[i]) ** 2 for i in m.t)
-        # m.obj = Objective(expr=m.slack_obj + m.track_obj, sense=minimize)
         for i in range(N - 1):
             cur = cv_pred[i]
-            opti.subject_to(alpha_f[i] == u1[i] - atan2((x1[i] + lf * x2[i]), x0[i]))
-            opti.subject_to(alpha_r[i] == -atan2((x1[i] - lr * x2[i]), x0[i]))
-            opti.subject_to(Fyf[i] == 2 * Df * sin(Cf * atan2((Bf * alpha_f[i]), 1)))
-            opti.subject_to(Fyr[i] == 2 * Dr * sin(Cr * atan2((Br * alpha_r[i]), 1)))
-            opti.subject_to(x0[i + 1] == x0[i] + self.dt * (u0[i] - 1 / mass * Fyf[i] * sin(u1[i]) + x2[i] * x1[i]))
-            opti.subject_to(x1[i + 1] == x1[i] + self.dt * (1 / mass * (Fyf[i] * cos(u1[i]) + Fyr[i]) - x2[i] * x0[i]))
-            opti.subject_to(x2[i + 1] == x2[i] + self.dt * (1 / Iz * (lf * Fyf[i] * cos(u1[i]) - lr * Fyr[i])))
-            opti.subject_to(x3[i + 1] == x3[i] + self.dt * (
-                        x2[i] - (x0[i] * cos(x3[i]) - x1[i] * sin(x3[i])) / (1 - cur * x5[i]) * cur))
-            opti.subject_to(
-                x4[i + 1] == x4[i] + self.dt * ((x0[i] * cos(x3[i]) - x1[i] * sin(x3[i])) / (1 - cur * x5[i])))
-            opti.subject_to(x5[i + 1] == x5[i] + self.dt * (x0[i] * sin(x3[i]) + x1[i] * cos(x3[i])))
+            self.opti.subject_to(self.alpha_f[i] == self.u1[i] - atan2((self.x1[i] + self.lf * self.x2[i]), self.x0[i]))
+            self.opti.subject_to(self.alpha_r[i] == -atan2((self.x1[i] - self.lr * self.x2[i]), self.x0[i]))
+            self.opti.subject_to(self.Fyf[i] == 2 * self.Df * sin(self.Cf * atan2((self.Bf * self.alpha_f[i]), 1)))
+            self.opti.subject_to(self.Fyr[i] == 2 * self.Dr * sin(self.Cr * atan2((self.Br * self.alpha_r[i]), 1)))
+            self.opti.subject_to(self.x0[i + 1] == self.x0[i] + self.dt * (self.u0[i] - 1 / self.mass * self.Fyf[i] * sin(self.u1[i]) + self.x2[i] * self.x1[i]))
+            self.opti.subject_to(self.x1[i + 1] == self.x1[i] + self.dt * (1 / self.mass * (self.Fyf[i] * cos(self.u1[i]) + self.Fyr[i]) - self.x2[i] * self.x0[i]))
+            self.opti.subject_to(self.x2[i + 1] == self.x2[i] + self.dt * (1 / self.Iz * (self.lf * self.Fyf[i] * cos(self.u1[i]) - self.lr * self.Fyr[i])))
+            self.opti.subject_to(self.x3[i + 1] == self.x3[i] + self.dt * (
+                        self.x2[i] - (self.x0[i] * cos(self.x3[i]) - self.x1[i] * sin(self.x3[i])) / (1 - cur * self.x5[i]) * cur))
+            self.opti.subject_to(
+                self.x4[i + 1] == self.x4[i] + self.dt * ((self.x0[i] * cos(self.x3[i]) - self.x1[i] * sin(self.x3[i])) / (1 - cur * self.x5[i])))
+            self.opti.subject_to(self.x5[i + 1] == self.x5[i] + self.dt * (self.x0[i] * sin(self.x3[i]) + self.x1[i] * cos(self.x3[i])))
 
-        opti.subject_to(x0[0] == x[0])
-        opti.subject_to(x1[0] == x[1])
-        opti.subject_to(x2[0] + slack2 == x[2])
-        opti.subject_to(x3[0] + slack3 == x[3])
-        opti.subject_to(x4[0] == x[4])
-        opti.subject_to(x5[0] == x[5])
+        self.opti.subject_to(self.x0[0] == x[0])
+        self.opti.subject_to(self.x1[0] == x[1])
+        self.opti.subject_to(self.x2[0] + self.slack2 == x[2])
+        self.opti.subject_to(self.x3[0] + self.slack3 == x[3])
+        self.opti.subject_to(self.x4[0] == x[4])
+        self.opti.subject_to(self.x5[0] == x[5])
 
-        solver_opts = {'ipopt': {'print_level': 0}}
-        opti.solver("ipopt", solver_opts)
-        sol = opti.solve()
-        # print(f'X: {sol.value(x0)}')
-        # print(f'Type X0: {type(sol.value(x0))}')
-        # print(f'Type X1: {type(sol.value(x1))}')
-        # print(f'Type X2: {type(sol.value(x2))}')
-        # print(f'Type X3: {type(sol.value(x3))}')
-        # print(f'Type X4: {type(sol.value(x4))}')
-        # print(f'Type X5: {type(sol.value(x5))}')
-        # print(f'Type U0: {type(sol.value(u0))}')
-        # print(f'Type U1: {type(sol.value(u1))}')
-        print(f"STATSUSSSSS: {sol.stats()['return_status']}")
+        sol = self.opti.solve()
+
         if sol.stats()['return_status'] == 'Solve_Succeeded':
             solver_flag = True
         else:
@@ -654,29 +445,29 @@ class hplControl():
 
         try:
 
-            VX = sol.value(x0[0])
-            VY = sol.value(x1[0])
-            WZ = sol.value(x2[0])
-            EPSI = sol.value(x3[0])
-            S = sol.value(x4[0])
-            EY = sol.value(x5[0])
+            VX = sol.value(self.x0[0])
+            VY = sol.value(self.x1[0])
+            WZ = sol.value(self.x2[0])
+            EPSI = sol.value(self.x3[0])
+            S = sol.value(self.x4[0])
+            EY = sol.value(self.x5[0])
 
             for t in range(1, N):
-                VX = np.hstack((VX, (sol.value(x0[t]))))
-                VY = np.hstack((VY, (sol.value(x1[t]))))
-                WZ = np.hstack((WZ, (sol.value(x2[t]))))
-                EPSI = np.hstack((EPSI, (sol.value(x3[t]))))
-                S = np.hstack((S, (sol.value(x4[t]))))
-                EY = np.hstack((EY, (sol.value(x5[t]))))
+                VX = np.hstack((VX, (sol.value(self.x0[t]))))
+                VY = np.hstack((VY, (sol.value(self.x1[t]))))
+                WZ = np.hstack((WZ, (sol.value(self.x2[t]))))
+                EPSI = np.hstack((EPSI, (sol.value(self.x3[t]))))
+                S = np.hstack((S, (sol.value(self.x4[t]))))
+                EY = np.hstack((EY, (sol.value(self.x5[t]))))
 
             x_pred = np.vstack((VX, VY, WZ, EPSI, S, EY))
 
-            A = sol.value(u0[0])
-            DELTA = sol.value(u1[0])
+            A = sol.value(self.u0[0])
+            DELTA = sol.value(self.u1[0])
 
             for t in range(1, N - 1):
-                A = np.hstack((A, (sol.value(u0[t]))))
-                DELTA = np.hstack((DELTA, (sol.value(u1[t]))))
+                A = np.hstack((A, (sol.value(self.u0[t]))))
+                DELTA = np.hstack((DELTA, (sol.value(self.u1[t]))))
             u_pred = np.vstack((A, DELTA))
             return [x_pred, u_pred, solver_flag]
         except Exception as e:
@@ -905,7 +696,7 @@ class hplControl():
             else:
                 l = self.lane_track_MPC_casadi(x_state, self.N_mpc)
             # return x_pred, u_pred, solver_status
-            print(l)
+            # print(l)
             return l
         except Exception as e:
             print(e)
