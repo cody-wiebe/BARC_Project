@@ -9,6 +9,11 @@ import matplotlib.pyplot as plt
 import pickle
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
+from lin_bike_MPC import LinearizeModel, substitute
+import sympy as sym
+
+
+A, B = LinearizeModel()
 
 
 def plotFromFile(testfile, lineflag = False, spacing = 0):
@@ -99,8 +104,8 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
     Vx_max = max(x_cl[0])
     Vx_min = min(x_cl[0])
     # dev = Vx_max - Vx_min
-    dev = 1
-    color_map = ((255*x_cl[0])/dev, (255*x_cl[0])/dev, (255*x_cl[0])/dev)
+    # dev = 1
+    # color_map = ((255*x_cl[0])/dev, (255*x_cl[0])/dev, (255*x_cl[0])/dev)
     try:
         if len(x_cl):
             for i in range(0, np.shape(x_cl)[1]):
@@ -123,7 +128,7 @@ def plot_closed_loop(map,x_cl = [], offst=10, x_pred=[], ):
                 
     plt.plot(Xp,Yp,'g')
     
-    [xm, xx, ym, yx] = plotTrajectory_newmap(map, X,Y, color_map)
+    [xm, xx, ym, yx] = plotTrajectory_newmap(map, X,Y)
     if offst == 1000:
         plt.axis('scaled')
     else:       
@@ -191,31 +196,32 @@ def plot_final(map, x_cl=[], offst=10):
 
 def vehicle_model(x, u, dt, map, model):
     # this function applies the chosen input to the discretized vehicle model 
-
-    if model == 'BARC': 
-        m  = 1.98 # mass of vehicle [kg]
-        lf = 0.125 # distance from center of mass to front axle [m]
-        lr = 0.125 # distance from center of mass to rear axle [m]
-        Iz = 0.024 # presumably moment? [kg/m]
-        Df = 0.8 * m * 9.81 / 2.0 # peak factor - is this a general formula? (maybe the 2 stays?)
-        Cf = 1.25 # shape (a0)
-        Bf = 1.0 # stiffness
-        Dr = 0.8 * m * 9.81 / 2.0 
-        Cr = 1.25
-        Br = 1.0
+    global A, B
+    # Asub, Bsub = substitute(A, B, x, u)
+    # if model == 'BARC': 
+    # m  = 2.2987 # mass of vehicle [kg]
+    lf = 0.13 # distance from center of mass to front axle [m]
+    lr = 0.13 # distance from center of mass to rear axle [m]
+    # Iz = 0.024 # presumably moment? [kg/m]
+    # Df = 0.8 * m * 9.81 / 2.0 # peak factor - is this a general formula? (maybe the 2 stays?)
+    # Cf = 1.25 # shape (a0)
+    # Bf = 1.0 # stiffness
+    # Dr = 0.8 * m * 9.81 / 2.0 
+    # Cr = 1.25
+    # Br = 1.0
         
-    if model == 'Genesis':
-        m  = 2303.1
-        lf = 1.5213
-        lr = 1.4987
-        Iz = 5520.1
-        Cr = 13.4851e4*2
-        Cf = 7.6419e4*2
+    # if model == 'Genesis':
+    #     m  = 2303.1
+    #     lf = 1.5213
+    #     lr = 1.4987
+    #     Iz = 5520.1
+    #     Cr = 13.4851e4*2
+    #     Cf = 7.6419e4*2
         
-        Df = 0.8 * m * 9.81 / 2.0
-        Dr = 0.8 * m * 9.81 / 2.0
-        Br = 1.0   
-        Bf = 1.0
+    #     Df = 0.8 * m * 9.81 / 2.0
+    #     Dr = 0.8 * m * 9.81 / 2.0
+    #     Br = 1.0   
+    #     Bf = 1.0
 
     cur_x_next = np.zeros(x.shape[0])
 
@@ -223,34 +229,43 @@ def vehicle_model(x, u, dt, map, model):
     delta = u[1]
     a     = u[0]
 
-    vx    = x[0]
-    vy    = x[1]
-    wz    = x[2]
-    epsi  = x[3]
-    s     = x[4]
-    ey    = x[5]
+    x_past    = x[0]
+    y_past    = x[1]
+    v_past    = x[2]
+    psi_past  = x[3]
+    # beta_past     = x[4]
 
-    alpha_f = delta - np.arctan2( vy + lf * wz, vx )
-    alpha_r = - np.arctan2( vy - lr * wz , vx)
+    # alpha_f = delta - np.arctan2( vy + lf * wz, vx )
+    # alpha_r = - np.arctan2( vy - lr * wz , vx)
 
     # Compute lateral force at front and rear tire
-    Fyf = 2 * Df * np.sin( Cf * np.arctan(Bf * alpha_f ) )
-    Fyr = 2 * Dr * np.sin( Cr * np.arctan(Br * alpha_r ) )
+    # Fyf = 2 * Df * np.sin( Cf * np.arctan(Bf * alpha_f ) )
+    # Fyr = 2 * Dr * np.sin( Cr * np.arctan(Br * alpha_r ) )
 
-    cur = map.getCurvature(s)
-    cur_x_next[0] = vx   + dt * (a - 1 / m * Fyf * np.sin(delta) + wz*vy)
-    cur_x_next[1] = vy   + dt * (1 / m * (Fyf * np.cos(delta) + Fyr) - wz * vx)
-    cur_x_next[2] = wz   + dt * (1 / Iz *(lf * Fyf * np.cos(delta) - lr * Fyr) )
-    cur_x_next[3] = epsi + dt * ( wz - (vx * np.cos(epsi) - vy * np.sin(epsi)) / (1 - cur * ey) * cur )
-    cur_x_next[4] = s    + dt * ( (vx * np.cos(epsi) - vy * np.sin(epsi)) / (1 - cur * ey) )
-    cur_x_next[5] = ey   + dt * (vx * np.sin(epsi) + vy * np.cos(epsi))
+    # cur = map.getCurvature(s)
+    # cur_x_next[0] = vx   + dt * (a - 1 / m * Fyf * np.sin(delta) + wz*vy)
+    # cur_x_next[1] = vy   + dt * (1 / m * (Fyf * np.cos(delta) + Fyr) - wz * vx)
+    # cur_x_next[2] = wz   + dt * (1 / Iz *(lf * Fyf * np.cos(delta) - lr * Fyr) )
+    # cur_x_next[3] = epsi + dt * ( wz - (vx * np.cos(epsi) - vy * np.sin(epsi)) / (1 - cur * ey) * cur )
+    # cur_x_next[4] = s    + dt * ( (vx * np.cos(epsi) - vy * np.sin(epsi)) / (1 - cur * ey) )
+    # cur_x_next[5] = ey   + dt * (vx * np.sin(epsi) + vy * np.cos(epsi))
+    # cur_x_next[4] = beta_past = (np.arctan2((lf/lf + lr)*np.tan(delta),1))
+    
+    # cur_x_next[4] = beta_past = beta_past + dt * (np.arctan2((lf/lf + lr)*np.tan(delta),1))
+    beta = np.arctan2((lr/lr + lf)*np.tan(delta),1)
 
-    vx   = cur_x_next[0]
-    vy   = cur_x_next[1]
-    wz   = cur_x_next[2]
-    epsi = cur_x_next[3]
-    s    = cur_x_next[4]
-    ey   = cur_x_next[5]
+    cur_x_next[0] = x_past   + dt * (v_past*np.cos(psi_past + beta))
+    cur_x_next[1] = y_past   + dt * (v_past*np.sin(psi_past + beta))
+    cur_x_next[2] = v_past   + dt * (a)
+    cur_x_next[3] = psi_past + dt * ((v_past/lr)*np.sin(beta))
+    # cur_x_next[4] = beta_past + dt * (np.arctan2((lf/lf + lr)*np.tan(delta),1))
+    
+
+    # x_past   = cur_x_next[0]
+    # y_past   = cur_x_next[1]
+    #    = cur_x_next[2]
+    # epsi = cur_x_next[3]
+    # s    = cur_x_next[4]
 
     return cur_x_next
     

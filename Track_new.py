@@ -5742,20 +5742,37 @@ class Map2():
             'Give correct track name'
 
         # convert the track's matlab points (which are wrong) into a correct cubic spline object
-        xy = self.coefs[:, -1].reshape(-1, 2)
-        xy = np.vstack([xy, xy[0]])
-        print(xy)
-        # xy = xy - xy[0]
-        xy = xy + np.array([-3.4669, 1.9382])
-        rot = -np.arctan2(xy[1, 1] - xy[0, 1], xy[1, 0] - xy[0, 0])
-        xy = xy @ np.array([[np.cos(rot), np.sin(rot)], [-np.sin(rot), np.cos(rot)]])
+        xy = self.coefs[:,-1].reshape(-1,2)
+        # print(xy)
+        xy = np.vstack([xy,xy[0]])
+        xy = xy - xy[0]
 
+        
+
+        rot = -np.arctan2(xy[1,1] - xy[0,1], xy[1,0] - xy[0,0])
+        xy = xy @ np.array([[np.cos(rot), np.sin(rot)],[-np.sin(rot),np.cos(rot)]])
+              
         N = xy.shape[0]
-        delta_xy = xy[np.r_[1:N]] - xy[np.r_[0:N - 1]]  # difference between rotated points (x-y space)
-        ds = np.linalg.norm(delta_xy, axis=1)
-        sl = np.concatenate([np.array([0]), np.cumsum(ds)])  # total s-lengths to each point
-        self.cs = CubicSpline(sl, xy, bc_type='periodic')
+        delta_xy = xy[np.r_[1:N]] - xy[np.r_[0:N-1]]  # difference between rotated points (x-y space)
+        ds = np.linalg.norm(delta_xy,axis = 1)
+        sl = np.concatenate([np.array([0]), np.cumsum(ds)]) # total s-lengths to each point       
+        self.cs = CubicSpline(sl,xy,bc_type='periodic')
         self.TrackLength = self.cs.x[-1]
+        
+        # self.xy = xy
+        num_interp_points = 200
+        self.arc_length = self.TrackLength/num_interp_points
+        s_interp_values = np.linspace(0, self.TrackLength, num_interp_points)
+        t_interp_values = np.zeros_like(s_interp_values)
+        ds_dt = np.sqrt(np.sum(self.cs(t_interp_values, 1) ** 2, axis=1))
+        # Derivative of the spline
+        # t_interp_values = np.zeros_like(s_interp_values)
+        t_interp_values[1:] = np.cumsum(np.diff(s_interp_values) / ds_dt[:-1])
+        interp_points = self.cs(t_interp_values)
+        # print(np.shape(xy))
+        # print(np.shape(interp_points))
+
+        self.xy = interp_points
 
     def getGlobalPosition(self, s, ey, epsi, return_tangent=False):
         # local_to_global(self,coords, return_tangent = False):
